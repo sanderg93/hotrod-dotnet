@@ -13,6 +13,7 @@
 
   <PropertyGroup>
     <PackageId>HotRod.Client</PackageId>
+    <!-- Fallback for local packs; the release workflow overrides this with the pushed git tag. -->
     <Version>0.1.0</Version>
     <Authors>Sander</Authors>
     <Copyright>Sander</Copyright>
