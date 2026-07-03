@@ -39,19 +39,13 @@ jobs:
           name: nupkg
           path: artifacts/*
 
-      # Publish to nuget.org only when the API key secret is configured; a fork or a repo without the
-      # secret still builds, tests, and packs, but skips the push instead of failing.
-      - name: Push to nuget.org
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: |
-          if [ -z "$NUGET_API_KEY" ]; then
-            echo "NUGET_API_KEY secret is not set; skipping the nuget.org push."
-            exit 0
-          fi
-          dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" \
-            --source https://api.nuget.org/v3/index.json --skip-duplicate
-          if compgen -G "artifacts/*.snupkg" > /dev/null; then
-            dotnet nuget push "artifacts/*.snupkg" --api-key "$NUGET_API_KEY" \
-              --source https://api.nuget.org/v3/index.json --skip-duplicate
-          fi
+      # Get a short-lived NuGet API key
+      - name: NuGet login (OIDC → temp API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+    
+      # Push the package
+      - name: NuGet push
+        run: dotnet nuget push artifacts/Hotrod.Client.nupkg --api-key ${{steps.login.outputs.NUGET_API_KEY}} --source https://api.nuget.org/v3/index.json
