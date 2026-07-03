@@ -61,8 +61,8 @@ Deliberately not implemented (yet):
 | SASL mechanisms beyond PLAIN / SCRAM (DIGEST, GSSAPI, OAUTHBEARER) | Cover the common username/password realms; Kerberos and token auth are out |
 | Client certificate (mutual TLS) auth | TLS authenticates the server only; clients still authenticate via SASL |
 | Pipelining | Each connection handles one request at a time; concurrency comes from the pool |
-| Transactions, counters, query | Key/value with client listeners and an invalidated near cache; the rest is out |
-| ProtoStream for custom types / numbers | Only strings are ProtoStream-wrapped; objects would need a registered `.proto` schema |
+| Transactions, query | Key/value plus clustered counters, client listeners and an invalidated near cache; the rest is out |
+| ProtoStream for custom types | Strings and primitive numbers are ProtoStream-wrapped; custom objects would need a registered `.proto` schema |
 
 The client learns every cluster node, keeps a pool per node, and routes each key straight to its
 primary owner using the same consistent hash the server does — so reads and writes are single-hop.
@@ -435,8 +435,9 @@ RemoteCache blobs  = client.GetCache("blobs", CacheEncoding.Raw);  // raw bytes
 
 With ProtoStream a value written by this client reads back through REST as
 `{"_type":"string","_value":"Amsterdam"}`, and a value written by the Java client or REST reads back
-here as the plain string — verified both directions. Only strings are wrapped so far; custom objects
-would need a registered `.proto` schema (and numbers, the other `WrappedMessage` fields).
+here as the plain string — verified both directions. Strings and primitive numbers (`int`, `long`,
+`float`, `double`, `bool`) are wrapped through the matching `WrappedMessage` fields; custom objects
+would still need a registered `.proto` schema.
 
 ## Cluster topology
 
@@ -712,9 +713,12 @@ Wire correctness must ultimately be confirmed against a running server. Useful t
 15. ~~Client listeners/events over a dedicated connection~~ — done; see [Client listeners](#client-listeners-events).
 16. ~~Invalidated near cache built on the listener stream~~ — done; see [Near cache](#near-cache).
 17. ~~`bulkGetKeys` (fetch every key)~~ — done; see [Operations](#operations).
+18. ~~Clustered strong/weak counters~~ — done.
+19. ~~Transparent retry/failover across cluster nodes~~ — done.
+20. ~~ProtoStream marshalling for primitive numbers (`int`/`long`/`float`/`double`/`bool`)~~ — done; see [Encoding](#encoding-interop-with-the-java-client-and-console).
 
-Working towards full HotRod 4.1 coverage (test-driven): server-side `exec`/admin.
-Further out: ProtoStream for numbers and custom types (via a registered `.proto` schema), and query.
+Working towards full HotRod 4.1 coverage (test-driven): server-side `exec`/admin, and query.
+Further out: ProtoStream for custom types via a registered `.proto` schema.
 
 ## How this was built
 
