@@ -1,0 +1,70 @@
+## .NET build output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+build/
+bld/
+msbuild.log
+msbuild.err
+msbuild.wrn
+
+## .NET / NuGet
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.nupkg
+*.snupkg
+.packages/
+*.nuget.props
+*.nuget.targets
+
+## Test results / coverage
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+coverage*.json
+coverage*.xml
+coverage*.info
+*.coverage
+*.coveragexml
+TestResults/
+
+## Build server / tooling
+.dotnet/
+.tools/
+*.binlog
+
+## Rider / IntelliJ / ReSharper
+.idea/
+*.sln.iml
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+## Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## TLS test keystores (regenerate locally; never commit private keys) — see README "TLS"
+*.pfx
+*.p12
+*.jks
+*.keystore
+
+## Claude Code session state and agent worktrees (harness-managed; not source)
+.claude/
+
+## OS files
+.DS_Store
+Thumbs.db
+*~

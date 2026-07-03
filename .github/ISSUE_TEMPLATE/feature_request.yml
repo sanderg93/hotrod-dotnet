@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest an improvement or a new capability for HotRod.Client
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Note the current scope in the README — some HotRod capabilities
+        (e.g. transactions, counters, query, ProtoStream for custom types) are deliberately not
+        implemented yet; it helps to check there first.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do that the client doesn't support today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What API or behavior would you like to see? A sketch of the shape you'd expect is helpful.
+      render: csharp
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you're using today, or other approaches you considered.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Links to the relevant HotRod protocol documentation, Infinispan Java client behavior, or related issues.
+    validations:
+      required: false

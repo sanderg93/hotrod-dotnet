@@ -1,0 +1,26 @@
+<infinispan
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns="urn:infinispan:config:16.0"
+      xmlns:server="urn:infinispan:server:16.0">
+
+   <cache-container name="default" statistics="true">
+      <local-cache name="default"/>
+   </cache-container>
+
+   <server xmlns="urn:infinispan:server:16.0">
+      <interfaces>
+         <interface name="public">
+            <inet-address value="${infinispan.bind.address:0.0.0.0}"/>
+         </interface>
+      </interfaces>
+
+      <socket-bindings default-interface="public" port-offset="0">
+         <socket-binding name="default" port="11222"/>
+      </socket-bindings>
+
+      <!-- No security-realm on the endpoint: HotRod and REST accept unauthenticated clients. -->
+      <endpoints>
+         <endpoint socket-binding="default"/>
+      </endpoints>
+   </server>
+</infinispan>

@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a problem with HotRod.Client
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill in as much detail as you can —
+        wire-protocol issues in particular are much easier to diagnose with exact versions and repro steps.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected to happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal code and/or server configuration that reproduces the problem.
+      render: csharp
+    validations:
+      required: true
+
+  - type: input
+    id: package-version
+    attributes:
+      label: HotRod.Client version
+      placeholder: e.g. 0.3.0
+    validations:
+      required: true
+
+  - type: input
+    id: dotnet-version
+    attributes:
+      label: .NET version
+      placeholder: e.g. net8.0, net10.0
+    validations:
+      required: true
+
+  - type: input
+    id: infinispan-version
+    attributes:
+      label: Infinispan server version
+      placeholder: e.g. 16.0.1
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or stack trace
+      description: Client-side exception/stack trace, and server-side logs if relevant (HotRod TRACE logging is often useful — see the README).
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Cluster topology, authentication/TLS configuration, or anything else that might be relevant.
+    validations:
+      required: false

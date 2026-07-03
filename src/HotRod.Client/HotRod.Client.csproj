@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>HotRod.Client</RootNamespace>
+    <AssemblyName>HotRod.Client</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>HotRod.Client</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Sander</Authors>
+    <Copyright>Sander</Copyright>
+    <Description>A dependency-free .NET client for Infinispan's HotRod 4.1 wire protocol. Provides synchronous and asynchronous access to remote caches with hash-aware (single-hop) routing, cluster topology tracking, connection pooling, ProtoStream marshalling, client-side listeners, near caching, and bulk key iteration.</Description>
+    <PackageTags>infinispan;hotrod;cache;client;distributed-cache;remote-cache</PackageTags>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/sanderg93/hotrod-dotnet</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sanderg93/hotrod-dotnet</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <!-- System.IO.Pipelines ships in the shared framework on net10.0 but must be
+         referenced explicitly on net8.0. -->
+    <PackageReference Include="System.IO.Pipelines" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HotRod.Client.Tests" />
+    <!-- Lets NSubstitute (Castle DynamicProxy) mock the library's internal interfaces. -->
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

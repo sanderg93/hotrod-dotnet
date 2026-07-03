@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/sanderg93/hotrod-dotnet/security/policy
+    about: Please report security vulnerabilities privately — see SECURITY.md — rather than filing a public issue.
+  - name: Questions and discussion
+    url: https://github.com/sanderg93/hotrod-dotnet/discussions
+    about: For usage questions or general discussion, please use Discussions instead of an issue.

@@ -1,0 +1,41 @@
+<infinispan
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns="urn:infinispan:config:16.0"
+      xmlns:server="urn:infinispan:server:16.0">
+
+   <jgroups>
+      <!-- Replace multicast discovery (MPING) with TCPPING listing both nodes by name,
+           which works on a Docker user-defined network where multicast does not. -->
+      <stack name="tcpping" extends="tcp">
+         <TCPPING initial_hosts="node1[7800],node2[7800]" port_range="0"
+                  stack.combine="REPLACE" stack.position="MPING"/>
+      </stack>
+   </jgroups>
+
+   <cache-container name="default" statistics="true">
+      <transport cluster="ispn-cluster" stack="tcpping"/>
+      <distributed-cache name="default" owners="2">
+         <!-- Store keys/values as raw bytes so the server hashes exactly the bytes the client
+              sends; this makes consistent-hash ownership match between client and server. -->
+         <encoding media-type="application/octet-stream"/>
+      </distributed-cache>
+   </cache-container>
+
+   <server xmlns="urn:infinispan:server:16.0">
+      <interfaces>
+         <interface name="public">
+            <!-- Bind to the container's site-local address (the Docker network IP) so the
+                 address advertised in HotRod topology is reachable by clients on the network. -->
+            <site-local/>
+         </interface>
+      </interfaces>
+
+      <socket-bindings default-interface="public" port-offset="0">
+         <socket-binding name="default" port="11222"/>
+      </socket-bindings>
+
+      <endpoints>
+         <endpoint socket-binding="default"/>
+      </endpoints>
+   </server>
+</infinispan>

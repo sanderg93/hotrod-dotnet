@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HotRod.Client/HotRod.Client.csproj" />
+    <Project Path="src/HotRod.Demo/HotRod.Demo.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/HotRod.Client.Tests/HotRod.Client.Tests.csproj" />
+    <Project Path="test/HotRod.Client.IntegrationTests/HotRod.Client.IntegrationTests.csproj" />
+  </Folder>
+</Solution>
