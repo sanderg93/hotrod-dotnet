@@ -46,6 +46,24 @@ internal static class Constants
     public const byte IterationNextRequest = 0x33;
     public const byte IterationEndRequest = 0x35;
 
+    // Remote query (Ickle). The request body is a single protobuf-encoded QueryRequest and the response
+    // body a single protobuf-encoded QueryResponse. Cache-scoped like a normal cache operation, so the
+    // cache name travels on the header and the response opcode is request + 1 (0x20).
+    public const byte QueryRequest = 0x1F;
+
+    // Transaction opcodes. A transactional cache buffers a transaction's writes on the client and drives
+    // the two-phase protocol at commit: PREPARE_TX stages the whole modification set under an XID and
+    // validates it, then COMMIT_TX or ROLLBACK_TX completes it and FORGET_TX discards the server-side
+    // record. PREPARE_TX is cache-scoped (its body is a modification list for one cache); COMMIT_TX,
+    // ROLLBACK_TX, and FORGET_TX are global to the XID and carry an empty cache name. The response opcode
+    // is request + 1. These match Infinispan's HotRodConstants (PREPARE_TX_2 = 0x7D, COMMIT = 0x3D,
+    // ROLLBACK = 0x3F, FORGET_TX = 0x79); PREPARE_TX_2 is the current prepare that streams the whole
+    // modification set, superseding the original PREPARE_TX opcode.
+    public const byte PrepareTransactionRequest = 0x7D;  // stage + validate a transaction's modifications
+    public const byte CommitTransactionRequest = 0x3D;   // commit a prepared transaction by XID
+    public const byte RollbackTransactionRequest = 0x3F; // roll a prepared transaction back by XID
+    public const byte ForgetTransactionRequest = 0x79;   // discard the server-side record of an XID
+
     // Clustered-counter opcodes. Counter operations are not cache-scoped: they carry an empty cache
     // name in the header and the counter's name as the first field of the body. The response opcode is
     // request + 1, as for cache operations.
@@ -58,6 +76,12 @@ internal static class Constants
     public const byte CounterCasRequest = 0x58;              // compare-and-swap (strong counters)
     public const byte CounterRemoveRequest = 0x5E;           // delete a counter cluster-wide
     public const byte CounterGetNamesRequest = 0x64;         // list every defined counter's name
+
+    // Server-side task execution. A single opcode carries both ad-hoc script execution
+    // (RemoteCache.execute) and cache administration: admin operations are server tasks named
+    // "@@cache@create", "@@cache@remove", etc., invoked through EXEC with string parameters. The
+    // response opcode is request + 1, as for cache operations.
+    public const byte ExecRequest = 0x2B;
 
     // Authentication opcodes. AUTH_MECH_LIST asks the server which SASL mechanisms
     // its endpoint offers; AUTH carries the SASL exchange itself.

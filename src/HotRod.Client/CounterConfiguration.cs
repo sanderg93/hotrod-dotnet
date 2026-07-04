@@ -100,6 +100,7 @@ public sealed class CounterConfiguration
         return new CounterConfiguration(CounterType.Weak, initialValue, long.MinValue, long.MaxValue, concurrencyLevel, storage);
     }
 
+    /// <summary>Returns a human-readable summary of the configuration's fields.</summary>
     public override string ToString() =>
         $"CounterConfiguration{{type={Type}, initialValue={InitialValue}, lowerBound={LowerBound}, " +
         $"upperBound={UpperBound}, concurrencyLevel={ConcurrencyLevel}, storage={Storage}}}";

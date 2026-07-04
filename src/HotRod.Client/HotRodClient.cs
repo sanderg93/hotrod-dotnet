@@ -17,6 +17,8 @@ public sealed class HotRodClient : IAsyncDisposable
     private readonly Cluster _cluster;
     private readonly CacheEncoding _defaultEncoding;
     private CounterManager? _counters;
+    private TransactionManager? _transactions;
+    private AdminManager? _administration;
 
     private HotRodClient(Cluster cluster, CacheEncoding defaultEncoding)
     {
@@ -78,6 +80,52 @@ public sealed class HotRodClient : IAsyncDisposable
     public CounterManager Counters => _counters ??= new CounterManager(this);
 
     /// <summary>
+    /// The manager for client-side transactions over a transactional cache. Use it (or
+    /// <see cref="RemoteCache.BeginTransaction"/>) to begin a transaction, buffer reads and writes, then
+    /// commit or roll them back atomically. Shared for the life of the client.
+    /// </summary>
+    public TransactionManager Transactions => _transactions ??= new TransactionManager(this);
+
+    /// <summary>
+    /// The entry point for Ickle remote queries against <paramref name="cache"/>, modelled on Java's
+    /// <c>QueryFactory</c>: build a query with <see cref="QueryFactory.Create"/>, optionally set paging and
+    /// named parameters, then execute it. The cache should use ProtoStream encoding and the server must
+    /// have the matching protobuf schema registered.
+    /// </summary>
+    public QueryFactory Query(RemoteCache cache)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+        return new QueryFactory(cache);
+    }
+
+    /// <summary>
+    /// The entry point for runtime cache administration: create, get-or-create, remove, and enumerate
+    /// caches on the server. Independent of any cache handle. Shared for the life of the client.
+    /// </summary>
+    public AdminManager Administration => _administration ??= new AdminManager(this);
+
+    /// <summary>
+    /// Runs the named server-side task (script) and returns its raw result. Parameters are passed as an
+    /// already-marshalled name/value map. With <paramref name="cacheName"/> null or empty the task runs
+    /// cluster-wide; otherwise it runs in that cache's context, and <paramref name="routingKey"/> (when
+    /// given) selects the node that owns the key. The result bytes are the task's raw return value.
+    /// </summary>
+    public ValueTask<byte[]> ExecuteAsync(
+        string scriptName,
+        IDictionary<string, byte[]>? parameters = null,
+        string? cacheName = null,
+        byte[]? routingKey = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(scriptName);
+        IReadOnlyDictionary<string, byte[]> args = parameters as IReadOnlyDictionary<string, byte[]>
+            ?? (parameters is null ? EmptyExecuteParameters : new Dictionary<string, byte[]>(parameters));
+        return ScriptExecutor.ExecuteAsync(this, cacheName ?? string.Empty, scriptName, args, routingKey, ct);
+    }
+
+    private static readonly IReadOnlyDictionary<string, byte[]> EmptyExecuteParameters = new Dictionary<string, byte[]>();
+
+    /// <summary>
     /// Returns a cache handle like <see cref="GetCache"/>, additionally wiring up a client-side near
     /// cache when <paramref name="nearCache"/> is given. Reads then populate a local copy and change
     /// events invalidate it; the listener is registered before this returns, so events are not missed.
@@ -111,5 +159,6 @@ public sealed class HotRodClient : IAsyncDisposable
     /// <summary>Leases a single connection for a multi-exchange operation (iteration) bound to one node.</summary>
     internal ValueTask<Cluster.ConnectionLease> LeaseAsync(CancellationToken ct) => _cluster.LeaseAsync(ct);
 
+    /// <summary>Closes all pooled connections to the cluster.</summary>
     public ValueTask DisposeAsync() => _cluster.DisposeAsync();
 }

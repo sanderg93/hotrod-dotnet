@@ -46,23 +46,38 @@ is the pragmatic alternative; this client is for when you specifically need HotR
 
 Implemented: the basic `Put`, `Get`, `Remove`, `ContainsKey`, `Clear`, `Size`; the conditional
 `PutIfAbsent` and `Replace`; the versioned `GetWithVersion`, `ReplaceWithVersion`,
-`RemoveWithVersion` (optimistic concurrency); the bulk `PutAll`, `GetAll`; and per-entry
-**expiration** (lifespan / max-idle) on every write (string and `byte[]` overloads). Operations are
-fully asynchronous over a **pool of connections per cluster node** with **Hash-Distribution-Aware
-client intelligence** (single-hop routing to a key's owner), optionally encrypted with **TLS** and
-authenticated with **SASL PLAIN, SCRAM-SHA-256 or SCRAM-SHA-512**. Every server status code is mapped
-to a typed exception. Strings are exchanged as **ProtoStream** by default, so they interoperate with
+`RemoveWithVersion` (optimistic concurrency); the bulk `PutAll`, `GetAll`, `bulkGetKeys`; iteration;
+and per-entry **expiration** (lifespan / max-idle) on every write (string and `byte[]` overloads).
+Beyond key/value: **Ickle remote query**, client-side **transactions** (prepare/commit/rollback),
+server-side **admin and script execution** (create/remove/list caches, run deployed scripts),
+**clustered counters** (strong and weak), **client listeners** with an invalidated **near cache**,
+and **transparent retry/failover** across cluster nodes. Operations are fully asynchronous over a
+**pool of connections per cluster node** with **Hash-Distribution-Aware client intelligence**
+(single-hop routing to a key's owner), optionally encrypted with **TLS** (including **mutual TLS**
+client certificates) and authenticated with **SASL PLAIN, SCRAM-SHA-256/512, EXTERNAL (mTLS) or
+OAUTHBEARER**. Every server status code is mapped to a typed exception. Strings, primitive numbers
+and registered custom types are exchanged as **ProtoStream** by default, so they interoperate with
 the Java client and the console; a **raw** encoding is available per cache.
+
+The wire protocol implemented is **HotRod 4.1** — still the latest version Infinispan defines as of
+this writing (checked directly against `HotRodVersion.java` in the Infinispan source, release
+16.2.1: `HOTROD_41` is the last entry and `LATEST`; the protocol docs go no further than "Hot Rod
+Protocol 4.1"). A server-version bump (e.g. 15 → 16) does not by itself imply a wire-protocol bump —
+the two version numbers track independently.
 
 Deliberately not implemented (yet):
 
 | Not implemented | Consequence |
 |-----------------|-------------|
-| SASL mechanisms beyond PLAIN / SCRAM (DIGEST, GSSAPI, OAUTHBEARER) | Cover the common username/password realms; Kerberos and token auth are out |
-| Client certificate (mutual TLS) auth | TLS authenticates the server only; clients still authenticate via SASL |
+| SASL DIGEST, GSSAPI (Kerberos) | PLAIN, SCRAM-SHA-256/512, EXTERNAL and OAUTHBEARER are covered; Kerberos realms are out |
+| Multimap operations (`RemoteMultimapCache`, opcodes `0x67`–`0x78`) | The multimap cache type (multiple values per key) is not supported at all |
+| `GetStream` / `PutStream` (opcodes `0x37`/`0x39`) | Large values must fit in one request/response body; no chunked transfer |
+| Counter event listeners (`CounterAddListener`/`CounterRemoveListener`, `0x5A`/`0x5C`) | Counters can be read/written but not subscribed to for change notifications |
+| Bloom-filter client listeners (`0x43`) | Regular client listeners work; the bloom-filter optimization for large key sets is unused |
+| Transaction recovery (`FetchInDoubtTx`, `0x7B`) | In-doubt XA transactions left by a crashed client cannot be recovered/queried |
+| Legacy plain `BulkGet` (`0x19`, superseded by iteration + `GetAll`) | No functional loss; `IterateAsync`/`GetAllAsync` cover the same ground |
 | Pipelining | Each connection handles one request at a time; concurrency comes from the pool |
-| Transactions, query | Key/value plus clustered counters, client listeners and an invalidated near cache; the rest is out |
-| ProtoStream for custom types | Strings and primitive numbers are ProtoStream-wrapped; custom objects would need a registered `.proto` schema |
+| Generic `Put<T>`/`Get<T>` on `HotRodClient` | The typed ProtoStream API exists on `RemoteCache.Serialization`, not yet mirrored on the client facade |
 
 The client learns every cluster node, keeps a pool per node, and routes each key straight to its
 primary owner using the same consistent hash the server does — so reads and writes are single-hop.
@@ -716,9 +731,18 @@ Wire correctness must ultimately be confirmed against a running server. Useful t
 18. ~~Clustered strong/weak counters~~ — done.
 19. ~~Transparent retry/failover across cluster nodes~~ — done.
 20. ~~ProtoStream marshalling for primitive numbers (`int`/`long`/`float`/`double`/`bool`)~~ — done; see [Encoding](#encoding-interop-with-the-java-client-and-console).
+21. ~~ProtoStream for custom types via a registered marshaller~~ — done (`RemoteCache.Serialization`).
+22. ~~Server-side admin (create/get-or-create/remove/list caches) and script execution~~ — done.
+23. ~~Ickle remote query~~ — done.
+24. ~~Client-side transactions (prepare/commit/rollback)~~ — done.
+25. ~~SASL EXTERNAL (mutual TLS) and OAUTHBEARER~~ — done.
+26. ~~Logging (`Microsoft.Extensions.Logging`) and DI integration (`AddHotRodClient`)~~ — done.
 
-Working towards full HotRod 4.1 coverage (test-driven): server-side `exec`/admin, and query.
-Further out: ProtoStream for custom types via a registered `.proto` schema.
+The wire protocol is HotRod 4.1, confirmed against Infinispan's own source (`HotRodVersion.java`,
+`LATEST = HOTROD_41`) to still be the latest as of Infinispan 16.2.1 — there is no 4.2 to track yet.
+Remaining known gaps against the full 4.1 opcode set: SASL DIGEST/GSSAPI, the multimap cache type,
+`GetStream`/`PutStream`, counter event listeners, bloom-filter client listeners, and XA transaction
+recovery (`FetchInDoubtTx`) — see the [Scope](#scope) table above for what each gap actually costs.
 
 ## How this was built
 

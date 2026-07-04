@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using HotRod.Client.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace HotRod.Client;
 
@@ -13,6 +15,7 @@ internal sealed class ConnectionPool : IAsyncDisposable
     private readonly HotRodClientOptions _options;
     private readonly ServerAddress _server;
     private readonly ITopologyCoordinator _coordinator;
+    private readonly ILogger _logger;
     private readonly SemaphoreSlim _capacity;
     private readonly ConcurrentQueue<PooledConnection> _idle = new();
     private readonly CancellationTokenSource _shutdown = new();
@@ -24,6 +27,7 @@ internal sealed class ConnectionPool : IAsyncDisposable
         _options = options;
         _server = server;
         _coordinator = coordinator;
+        _logger = options.LoggerFactory.CreateLogger("HotRod.Client.ConnectionPool");
         _capacity = new SemaphoreSlim(options.MaxConnections, options.MaxConnections);
         _reaper = options.MaintenanceInterval > TimeSpan.Zero ? ReapLoopAsync() : Task.CompletedTask;
     }
@@ -58,7 +62,10 @@ internal sealed class ConnectionPool : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (!await _capacity.WaitAsync(_options.AcquireTimeout, ct))
+        {
+            Log.PoolExhausted(_logger, _server.Host, _server.Port, _options.AcquireTimeout);
             throw new HotRodException($"Timed out waiting {_options.AcquireTimeout} for a pooled connection.");
+        }
 
         try
         {

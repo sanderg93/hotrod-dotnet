@@ -7,11 +7,22 @@ namespace HotRod.Client;
 [Flags]
 public enum ClientListenerInterest : byte
 {
+    /// <summary>No events; the listener receives nothing.</summary>
     None = 0,
+
+    /// <summary>Notify when a new entry is created.</summary>
     Created = 0x01,
+
+    /// <summary>Notify when an existing entry is modified.</summary>
     Modified = 0x02,
+
+    /// <summary>Notify when an entry is removed.</summary>
     Removed = 0x04,
+
+    /// <summary>Notify when an entry expires.</summary>
     Expired = 0x08,
+
+    /// <summary>All event types combined.</summary>
     All = Created | Modified | Removed | Expired,
 }
 

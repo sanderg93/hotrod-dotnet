@@ -8,6 +8,7 @@ namespace HotRod.Client;
 [Flags]
 public enum CacheFlag
 {
+    /// <summary>No flags set; default request behaviour.</summary>
     None = 0,
 
     /// <summary>Make a write return the previous value (otherwise the body carries no prior value).</summary>

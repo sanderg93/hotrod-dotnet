@@ -184,7 +184,7 @@ internal sealed class ProtoStreamMarshaller : CacheMarshaller
         {
             case 0: ReadVarintLong(bytes, ref pos); break;        // varint
             case 1: pos += 8; break;                              // 64-bit
-            case 2: pos += ReadVarint(bytes, ref pos); break;     // length-delimited
+            case 2: int len = ReadVarint(bytes, ref pos); pos += len; break; // length-delimited
             case 5: pos += 4; break;                              // 32-bit
             default: throw new HotRodException($"Unsupported protobuf wire type {wireType}");
         }

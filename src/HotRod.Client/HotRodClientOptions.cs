@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace HotRod.Client;
 
 /// <summary>
@@ -9,20 +12,39 @@ public sealed class HotRodClientOptions
 {
     // -- Connection target ---------------------------------------------------
 
+    /// <summary>Hostname or IP address of a server in the cluster.</summary>
     public string Host { get; init; } = "127.0.0.1";
+
+    /// <summary>Port of the server given by <see cref="Host"/>.</summary>
     public int Port { get; init; } = 11222;
 
     // -- Security ------------------------------------------------------------
 
     /// <summary>Username for SASL authentication; leave null for an unauthenticated endpoint.</summary>
     public string? Username { get; init; }
+    /// <summary>Password for SASL authentication; leave null for an unauthenticated endpoint.</summary>
     public string? Password { get; init; }
+
+    /// <summary>
+    /// OAuth 2.0 bearer token for SASL OAUTHBEARER authentication. Used instead of username/password
+    /// when <see cref="Mechanism"/> is <see cref="SaslMechanism.OAuthBearer"/>.
+    /// </summary>
+    public string? Token { get; init; }
 
     /// <summary>SASL mechanism used when credentials are supplied. Defaults to SCRAM-SHA-256.</summary>
     public SaslMechanism Mechanism { get; init; } = SaslMechanism.ScramSha256;
 
     /// <summary>TLS settings; leave null to connect in plaintext.</summary>
     public TlsOptions? Tls { get; init; }
+
+    // -- Diagnostics ---------------------------------------------------------
+
+    /// <summary>
+    /// Factory used to create the loggers that record connection, authentication, topology, failover and
+    /// pool events. Defaults to <see cref="NullLoggerFactory"/>, so logging is off (and free of allocations)
+    /// until an application supplies its own factory.
+    /// </summary>
+    public ILoggerFactory LoggerFactory { get; init; } = NullLoggerFactory.Instance;
 
     // -- Cluster awareness ---------------------------------------------------
 

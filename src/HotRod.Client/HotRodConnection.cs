@@ -4,7 +4,9 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using HotRod.Client.Logging;
 using HotRod.Client.Protocol;
+using Microsoft.Extensions.Logging;
 
 namespace HotRod.Client;
 
@@ -23,16 +25,22 @@ internal sealed class HotRodConnection : IAsyncDisposable
     private readonly PipeWriter _writer;
     private readonly ITopologyCoordinator _coordinator;
     private readonly ClientIntelligence _intelligence;
+    private readonly ServerAddress _server;
+    private readonly ILogger _logger;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private long _messageId;
     private volatile bool _faulted;
 
-    private HotRodConnection(TcpClient tcp, Stream transport, ITopologyCoordinator coordinator, ClientIntelligence intelligence)
+    private HotRodConnection(
+        TcpClient tcp, Stream transport, ITopologyCoordinator coordinator, ClientIntelligence intelligence,
+        ServerAddress server, ILogger logger)
     {
         _tcp = tcp;
         _transport = transport;
         _coordinator = coordinator;
         _intelligence = intelligence;
+        _server = server;
+        _logger = logger;
         _reader = PipeReader.Create(transport, new StreamPipeReaderOptions(leaveOpen: true));
         _writer = PipeWriter.Create(transport, new StreamPipeWriterOptions(leaveOpen: true));
     }
@@ -47,16 +55,33 @@ internal sealed class HotRodConnection : IAsyncDisposable
     public static async ValueTask<HotRodConnection> ConnectAsync(
         HotRodClientOptions options, ServerAddress server, ITopologyCoordinator coordinator, CancellationToken ct)
     {
+        ILogger logger = options.LoggerFactory.CreateLogger("HotRod.Client.Connection");
         var tcp = new TcpClient { NoDelay = true };
         try
         {
             await tcp.ConnectAsync(server.Host, server.Port, ct);
             Stream transport = await NegotiateAsync(tcp.GetStream(), server.Host, options.Tls, ct);
 
-            var connection = new HotRodConnection(tcp, transport, coordinator, options.Intelligence);
-            if (options.Username is not null)
-                await connection.AuthenticateAsync(
-                    CreateMechanism(options.Mechanism, options.Username, options.Password ?? string.Empty), ct);
+            var connection = new HotRodConnection(tcp, transport, coordinator, options.Intelligence, server, logger);
+            // EXTERNAL takes its identity from the TLS client certificate, so it authenticates
+            // even without a username; OAUTHBEARER authenticates off a token instead of a
+            // username/password pair; the others need supplied credentials.
+            if (options.Username is not null || options.Mechanism == SaslMechanism.External || options.Token is not null)
+            {
+                string user = options.Username ?? "(external)";
+                try
+                {
+                    await connection.AuthenticateAsync(
+                        CreateMechanism(options.Mechanism, options.Username, options.Password ?? string.Empty, options.Token), ct);
+                    Log.AuthenticationSucceeded(logger, user, options.Mechanism);
+                }
+                catch (Exception ex)
+                {
+                    Log.AuthenticationFailed(logger, user, options.Mechanism, ex);
+                    throw;
+                }
+            }
+            Log.ConnectionOpened(logger, server.Host, server.Port);
             return connection;
         }
         catch
@@ -75,7 +100,11 @@ internal sealed class HotRodConnection : IAsyncDisposable
         var ssl = new SslStream(network, leaveInnerStreamOpen: false,
             userCertificateValidationCallback: tls.AllowUntrusted ? (_, _, _, _) => true : null);
         await ssl.AuthenticateAsClientAsync(
-            new SslClientAuthenticationOptions { TargetHost = tls.TargetHost ?? host }, ct);
+            new SslClientAuthenticationOptions
+            {
+                TargetHost = tls.TargetHost ?? host,
+                ClientCertificates = tls.BuildClientCertificates(),
+            }, ct);
         return ssl;
     }
 
@@ -134,12 +163,16 @@ internal sealed class HotRodConnection : IAsyncDisposable
         }
     }
 
-    private static ISaslMechanism CreateMechanism(SaslMechanism mechanism, string username, string password) =>
+    private static ISaslMechanism CreateMechanism(SaslMechanism mechanism, string? username, string password, string? token) =>
         mechanism switch
         {
-            SaslMechanism.Plain => new PlainMechanism(username, password),
-            SaslMechanism.ScramSha256 => new ScramMechanism("SCRAM-SHA-256", username, password, HashAlgorithmName.SHA256, 32),
-            SaslMechanism.ScramSha512 => new ScramMechanism("SCRAM-SHA-512", username, password, HashAlgorithmName.SHA512, 64),
+            SaslMechanism.Plain => new PlainMechanism(username!, password),
+            SaslMechanism.ScramSha256 => new ScramMechanism("SCRAM-SHA-256", username!, password, HashAlgorithmName.SHA256, 32),
+            SaslMechanism.ScramSha512 => new ScramMechanism("SCRAM-SHA-512", username!, password, HashAlgorithmName.SHA512, 64),
+            // EXTERNAL carries no password; a username, if given, is the requested authorization identity.
+            SaslMechanism.External => new ExternalMechanism(username),
+            SaslMechanism.OAuthBearer => new OAuthBearerMechanism(
+                token ?? throw new HotRodException("OAUTHBEARER authentication requires a token; set HotRodClientOptions.Token")),
             _ => throw new ArgumentOutOfRangeException(nameof(mechanism), mechanism, "Unsupported SASL mechanism"),
         };
 
@@ -449,5 +482,6 @@ internal sealed class HotRodConnection : IAsyncDisposable
         await _transport.DisposeAsync();
         _tcp.Dispose();
         _lock.Dispose();
+        Log.ConnectionClosed(_logger, _server.Host, _server.Port);
     }
 }

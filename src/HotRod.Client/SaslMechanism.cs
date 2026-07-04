@@ -21,4 +21,18 @@ public enum SaslMechanism
 
     /// <summary>Salted challenge-response over SHA-512.</summary>
     ScramSha512,
+
+    /// <summary>
+    /// Derives the client identity from an out-of-band channel rather than a password (RFC 4422
+    /// App. A). Used with mutual TLS: the client presents a certificate during the handshake and
+    /// the server maps that validated certificate to a user, so the SASL exchange carries no
+    /// credentials. Requires a client certificate on <see cref="TlsOptions"/>.
+    /// </summary>
+    External,
+
+    /// <summary>
+    /// Presents an OAuth 2.0 bearer token instead of a username and password (RFC 7628). The token
+    /// is supplied via <see cref="HotRodClientOptions.Token"/>; only safe over TLS.
+    /// </summary>
+    OAuthBearer,
 }

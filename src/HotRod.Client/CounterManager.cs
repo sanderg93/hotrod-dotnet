@@ -229,14 +229,17 @@ internal static class CounterOps
 /// <summary>The base type for errors specific to counter operations.</summary>
 public class CounterException : HotRodException
 {
+    /// <summary>Creates the exception with a message and no associated server status.</summary>
     public CounterException(string message) : base(message) { }
 
+    /// <summary>Creates the exception with a message and the server status it originated from.</summary>
     public CounterException(string message, byte status) : base(message, status) { }
 }
 
 /// <summary>Raised when an operation targets a counter that is not defined (server status key-does-not-exist).</summary>
 public sealed class UndefinedCounterException : CounterException
 {
+    /// <summary>Creates the exception for the named counter.</summary>
     public UndefinedCounterException(string name)
         : base($"Counter '{name}' is not defined.", Protocol.Constants.StatusKeyDoesNotExist) => CounterName = name;
 
@@ -250,6 +253,7 @@ public sealed class UndefinedCounterException : CounterException
 /// </summary>
 public sealed class CounterOutOfBoundsException : CounterException
 {
+    /// <summary>Creates the exception for the named counter.</summary>
     public CounterOutOfBoundsException(string name)
         : base($"Counter '{name}' would exceed its configured bounds; the update was not applied.",
             Protocol.Constants.StatusNotExecutedWithPrevious) => CounterName = name;

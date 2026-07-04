@@ -9,7 +9,10 @@ namespace HotRod.Client;
 /// </summary>
 public readonly struct Expiration(TimeSpan? lifespan = null, TimeSpan? maxIdle = null)
 {
+    /// <summary>How long the entry may live before it expires regardless of access. Null uses the cache's configured default.</summary>
     public TimeSpan? Lifespan { get; } = lifespan;
+
+    /// <summary>How long the entry may stay unaccessed before it expires. Null uses the cache's configured default.</summary>
     public TimeSpan? MaxIdle { get; } = maxIdle;
 
     /// <summary>Uses the cache's configured expiration for both lifespan and maxIdle.</summary>

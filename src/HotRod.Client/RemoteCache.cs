@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using HotRod.Client.Marshalling;
 using HotRod.Client.Protocol;
 
 namespace HotRod.Client;
@@ -26,6 +27,8 @@ public sealed class RemoteCache : IAsyncDisposable
     private NearCache? _nearCache;
     private ClientListener? _nearCacheListener;
 
+    private SerializationContext _serialization = SerializationContext.Default;
+
     internal RemoteCache(HotRodClient client, string name, CacheEncoding encoding)
     {
         _client = client;
@@ -38,6 +41,29 @@ public sealed class RemoteCache : IAsyncDisposable
     /// same store reads and events act on, so it is the way to observe local hits versus server fall-through.
     /// </summary>
     public NearCacheStatistics? NearCacheStats => _nearCache?.Snapshot();
+
+    /// <summary>
+    /// The registry the generic typed overloads use to turn values into ProtoStream bytes and back.
+    /// Defaults to <see cref="SerializationContext.Default"/> (built-in scalar support); assign one with
+    /// registered <see cref="IProtoStreamMarshaller{T}"/> instances to store custom types. Setting null
+    /// restores the default.
+    /// </summary>
+    public SerializationContext Serialization
+    {
+        get => _serialization;
+        set => _serialization = value ?? SerializationContext.Default;
+    }
+
+    /// <summary>This cache's name, and the marshaller for its encoding — used to scope a transaction to this cache.</summary>
+    internal string Name => _name;
+    internal CacheMarshaller Marshaller => _marshaller;
+
+    /// <summary>
+    /// Begins a client-side transaction over this cache. Reads and writes on the returned
+    /// <see cref="HotRodTransaction"/> are buffered and applied atomically on commit; the cache must be
+    /// configured server-side as transactional (transaction mode NON_XA or NON_DURABLE_XA).
+    /// </summary>
+    public HotRodTransaction BeginTransaction(TimeSpan? timeout = null) => _client.Transactions.Begin(this, timeout);
 
     // -- Basic operations ---------------------------------------------------
 
@@ -517,39 +543,49 @@ public sealed class RemoteCache : IAsyncDisposable
 
     // -- String convenience overloads (via the cache's encoding) ------------
 
+    /// <summary>String-keyed overload of <see cref="PutAsync(byte[], byte[], Expiration, CancellationToken)"/>.</summary>
     public ValueTask PutAsync(string key, string value, Expiration expiration = default, CancellationToken ct = default) =>
         PutAsync(_marshaller.Marshal(key), _marshaller.Marshal(value), expiration, ct);
 
+    /// <summary>String-keyed overload of <see cref="GetAsync(byte[], CancellationToken)"/>.</summary>
     public async ValueTask<string?> GetAsync(string key, CancellationToken ct = default)
     {
         byte[]? value = await GetAsync(_marshaller.Marshal(key), ct);
         return value is null ? null : _marshaller.Unmarshal(value);
     }
 
+    /// <summary>String-keyed overload of <see cref="RemoveAsync(byte[], CancellationToken)"/>.</summary>
     public ValueTask<bool> RemoveAsync(string key, CancellationToken ct = default) =>
         RemoveAsync(_marshaller.Marshal(key), ct);
 
+    /// <summary>String-keyed overload of <see cref="ContainsKeyAsync(byte[], CancellationToken)"/>.</summary>
     public ValueTask<bool> ContainsKeyAsync(string key, CancellationToken ct = default) =>
         ContainsKeyAsync(_marshaller.Marshal(key), ct);
 
+    /// <summary>String-keyed overload of <see cref="PutIfAbsentAsync(byte[], byte[], Expiration, CancellationToken)"/>.</summary>
     public ValueTask<bool> PutIfAbsentAsync(string key, string value, Expiration expiration = default, CancellationToken ct = default) =>
         PutIfAbsentAsync(_marshaller.Marshal(key), _marshaller.Marshal(value), expiration, ct);
 
+    /// <summary>String-keyed overload of <see cref="ReplaceAsync(byte[], byte[], Expiration, CancellationToken)"/>.</summary>
     public ValueTask<bool> ReplaceAsync(string key, string value, Expiration expiration = default, CancellationToken ct = default) =>
         ReplaceAsync(_marshaller.Marshal(key), _marshaller.Marshal(value), expiration, ct);
 
+    /// <summary>String-keyed overload of <see cref="GetWithVersionAsync(byte[], CancellationToken)"/>.</summary>
     public async ValueTask<Versioned<string>?> GetWithVersionAsync(string key, CancellationToken ct = default)
     {
         Versioned<byte[]>? versioned = await GetWithVersionAsync(_marshaller.Marshal(key), ct);
         return versioned is null ? null : new Versioned<string>(_marshaller.Unmarshal(versioned.Value), versioned.Version);
     }
 
+    /// <summary>String-keyed overload of <see cref="ReplaceWithVersionAsync(byte[], byte[], long, Expiration, CancellationToken)"/>.</summary>
     public ValueTask<bool> ReplaceWithVersionAsync(string key, string value, long version, Expiration expiration = default, CancellationToken ct = default) =>
         ReplaceWithVersionAsync(_marshaller.Marshal(key), _marshaller.Marshal(value), version, expiration, ct);
 
+    /// <summary>String-keyed overload of <see cref="RemoveWithVersionAsync(byte[], long, CancellationToken)"/>.</summary>
     public ValueTask<bool> RemoveWithVersionAsync(string key, long version, CancellationToken ct = default) =>
         RemoveWithVersionAsync(_marshaller.Marshal(key), version, ct);
 
+    /// <summary>String-keyed overload of <see cref="GetWithMetadataAsync(byte[], CancellationToken)"/>.</summary>
     public async ValueTask<MetadataValue<string>?> GetWithMetadataAsync(string key, CancellationToken ct = default)
     {
         MetadataValue<byte[]>? meta = await GetWithMetadataAsync(_marshaller.Marshal(key), ct);
@@ -559,15 +595,19 @@ public sealed class RemoteCache : IAsyncDisposable
                 meta.Created, meta.Lifespan, meta.LastUsed, meta.MaxIdle);
     }
 
+    /// <summary>String-keyed overload of <see cref="PutAndReturnPreviousAsync(byte[], byte[], Expiration, CancellationToken)"/>.</summary>
     public async ValueTask<string?> PutAndReturnPreviousAsync(string key, string value, Expiration expiration = default, CancellationToken ct = default) =>
         Unmarshal(await PutAndReturnPreviousAsync(_marshaller.Marshal(key), _marshaller.Marshal(value), expiration, ct));
 
+    /// <summary>String-keyed overload of <see cref="RemoveAndReturnPreviousAsync(byte[], CancellationToken)"/>.</summary>
     public async ValueTask<string?> RemoveAndReturnPreviousAsync(string key, CancellationToken ct = default) =>
         Unmarshal(await RemoveAndReturnPreviousAsync(_marshaller.Marshal(key), ct));
 
+    /// <summary>String-keyed overload of <see cref="ReplaceAndReturnPreviousAsync(byte[], byte[], Expiration, CancellationToken)"/>.</summary>
     public async ValueTask<string?> ReplaceAndReturnPreviousAsync(string key, string value, Expiration expiration = default, CancellationToken ct = default) =>
         Unmarshal(await ReplaceAndReturnPreviousAsync(_marshaller.Marshal(key), _marshaller.Marshal(value), expiration, ct));
 
+    /// <summary>String-keyed overload of <see cref="PutIfAbsentAndReturnPreviousAsync(byte[], byte[], Expiration, CancellationToken)"/>.</summary>
     public async ValueTask<string?> PutIfAbsentAndReturnPreviousAsync(string key, string value, Expiration expiration = default, CancellationToken ct = default) =>
         Unmarshal(await PutIfAbsentAndReturnPreviousAsync(_marshaller.Marshal(key), _marshaller.Marshal(value), expiration, ct));
 
@@ -588,6 +628,53 @@ public sealed class RemoteCache : IAsyncDisposable
             result.Add(_marshaller.Unmarshal(key));
         return result;
     }
+
+    // -- Generic typed value overloads (via the serialization context) ------
+
+    /// <summary>
+    /// Stores a typed value under a string key, encoding the value through <see cref="Serialization"/>
+    /// (a built-in scalar or a registered custom type) as a ProtoStream <c>WrappedMessage</c>.
+    /// </summary>
+    public ValueTask PutAsync<TValue>(string key, TValue value, Expiration expiration = default, CancellationToken ct = default) =>
+        PutAsync(_marshaller.Marshal(key), _serialization.Marshal(value), expiration, ct);
+
+    /// <summary>Returns the typed value for <paramref name="key"/> decoded through <see cref="Serialization"/>, or the default when absent.</summary>
+    public async ValueTask<TValue?> GetAsync<TValue>(string key, CancellationToken ct = default)
+    {
+        byte[]? value = await GetAsync(_marshaller.Marshal(key), ct);
+        return value is null ? default : _serialization.Unmarshal<TValue>(value);
+    }
+
+    /// <summary>Stores the typed value only if the key is absent; returns true if it was stored.</summary>
+    public ValueTask<bool> PutIfAbsentAsync<TValue>(string key, TValue value, Expiration expiration = default, CancellationToken ct = default) =>
+        PutIfAbsentAsync(_marshaller.Marshal(key), _serialization.Marshal(value), expiration, ct);
+
+    /// <summary>Replaces the typed value only if the key is present; returns true if it was replaced.</summary>
+    public ValueTask<bool> ReplaceAsync<TValue>(string key, TValue value, Expiration expiration = default, CancellationToken ct = default) =>
+        ReplaceAsync(_marshaller.Marshal(key), _serialization.Marshal(value), expiration, ct);
+
+    /// <summary>Returns the typed value with its server metadata decoded through <see cref="Serialization"/>, or null if absent.</summary>
+    public async ValueTask<MetadataValue<TValue>?> GetWithMetadataAsync<TValue>(string key, CancellationToken ct = default)
+    {
+        MetadataValue<byte[]>? meta = await GetWithMetadataAsync(_marshaller.Marshal(key), ct);
+        return meta is null
+            ? null
+            : new MetadataValue<TValue>(_serialization.Unmarshal<TValue>(meta.Value), meta.Version,
+                meta.Created, meta.Lifespan, meta.LastUsed, meta.MaxIdle);
+    }
+
+    // -- Remote query (Ickle) -----------------------------------------------
+
+    /// <summary>
+    /// Runs one Ickle query exchange: writes the protobuf-encoded QueryRequest as the request body and
+    /// returns the protobuf-encoded QueryResponse body. The query travels on this cache's data format, so
+    /// the server transcodes against the cache's storage encoding and returns ProtoStream-wrapped results.
+    /// Callers reach this through <see cref="HotRodClient.Query"/>.
+    /// </summary>
+    internal ValueTask<byte[]> ExecuteQueryAsync(byte[] requestBytes, CancellationToken ct) =>
+        Execute(Constants.QueryRequest, routingKey: null,
+            w => HotRodCodec.WriteArray(w, requestBytes),
+            (_, reader, c) => HotRodCodec.ReadArrayAsync(reader, c), ct);
 
     // -- Plumbing -----------------------------------------------------------
 

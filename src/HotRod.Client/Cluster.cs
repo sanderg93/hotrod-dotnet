@@ -1,6 +1,8 @@
 using System.Buffers;
 using System.IO.Pipelines;
+using HotRod.Client.Logging;
 using HotRod.Client.Protocol;
+using Microsoft.Extensions.Logging;
 
 namespace HotRod.Client;
 
@@ -17,6 +19,7 @@ internal sealed class Cluster : ITopologyCoordinator, IAsyncDisposable
     private const int ForceTopologyUpdate = -1;
 
     private readonly HotRodClientOptions _options;
+    private readonly ILogger _logger;
     private readonly object _sync = new();
     private readonly SemaphoreSlim _reconcileLock = new(1, 1);
     private readonly Dictionary<string, int> _topologyIds = new();
@@ -28,7 +31,11 @@ internal sealed class Cluster : ITopologyCoordinator, IAsyncDisposable
     private bool _dirty;
     private int _roundRobin = -1;
 
-    private Cluster(HotRodClientOptions options) => _options = options;
+    private Cluster(HotRodClientOptions options)
+    {
+        _options = options;
+        _logger = options.LoggerFactory.CreateLogger("HotRod.Client.Cluster");
+    }
 
     /// <summary>Creates the cluster with one pool for the seed server from <paramref name="options"/>.</summary>
     public static async ValueTask<Cluster> CreateAsync(HotRodClientOptions options, CancellationToken ct)
@@ -73,6 +80,7 @@ internal sealed class Cluster : ITopologyCoordinator, IAsyncDisposable
             {
                 _desired = servers;
                 _dirty = true;
+                Log.TopologyChanged(_logger, cacheName, topologyId, servers.Count);
             }
         }
     }
@@ -106,6 +114,8 @@ internal sealed class Cluster : ITopologyCoordinator, IAsyncDisposable
                 ConnectionPool pool = attempt == 0
                     ? SelectPool(cacheName, routingKey)
                     : SelectFailoverPool(tried);
+                if (attempt > 0)
+                    Log.NodeFailover(_logger, pool.Server.Host, pool.Server.Port, attempt);
                 tried.Add(pool.Server);
 
                 ConnectionPool.PooledConnection pooled = await pool.BorrowAsync(c);

@@ -32,6 +32,7 @@ public sealed class ClientListener : IAsyncDisposable
     /// <summary>Generates the random id a new listener registers itself under.</summary>
     internal static byte[] NewId() => RandomNumberGenerator.GetBytes(16);
 
+    /// <summary>Unregisters the listener from the server and stops the background read loop. Safe to call more than once.</summary>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
