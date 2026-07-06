@@ -74,6 +74,16 @@ public sealed class HotRodClient : IAsyncDisposable
         new(this, name ?? string.Empty, encoding ?? _defaultEncoding);
 
     /// <summary>
+    /// Returns a handle to a named multimap cache (or the default cache when <paramref name="name"/> is
+    /// null/empty), using <paramref name="encoding"/> or the client's default when not given.
+    /// <paramref name="supportsDuplicates"/> selects the multimap's duplicate semantics (list versus set)
+    /// and must match how the cache is configured server-side; see
+    /// <see cref="MultimapCache.SupportsDuplicates"/>.
+    /// </summary>
+    public MultimapCache GetMultimapCache(string? name = null, CacheEncoding? encoding = null, bool supportsDuplicates = false) =>
+        new(this, name ?? string.Empty, encoding ?? _defaultEncoding, supportsDuplicates);
+
+    /// <summary>
     /// The manager for Infinispan's clustered counters (strong and weak). Counters are independent of any
     /// cache; use this to define, look up, and remove them. Shared for the life of the client.
     /// </summary>

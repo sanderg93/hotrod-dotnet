@@ -46,6 +46,40 @@ internal static class Constants
     public const byte IterationNextRequest = 0x33;
     public const byte IterationEndRequest = 0x35;
 
+    // Streaming value transfer. The original v2.6 GetStream/PutStream (0x37/0x39, response = request +
+    // 1, one value per request/response) was dropped as of protocol 4.1 — the version this client
+    // negotiates — and confirmed unusable against a current server (see StreamCodec.cs). It is replaced
+    // by a GetStreamStart/Next/End and PutStreamStart/Next/End family: a large value is read or written
+    // as several discrete exchanges on one held connection (like iteration's cursor), each chunk no
+    // bigger than a batch size, so neither side has to hold the whole value in memory at once.
+    // Unlike the rest of this protocol, response = request - 1 for this whole family (confirmed in both
+    // the client and server modules' HotRodConstants.java — the protocol doc's own table has a
+    // copy-paste error for GetStreamEnd, listing its request as 0xE4 too; the source has 0xE5).
+    public const byte GetStreamEndResponse = 0xE4;
+    public const byte GetStreamEndRequest = 0xE5;
+    public const byte GetStreamNextResponse = 0xE6;
+    public const byte GetStreamNextRequest = 0xE7;
+    public const byte GetStreamStartResponse = 0xE8;
+    public const byte GetStreamStartRequest = 0xE9;
+    public const byte PutStreamEndResponse = 0xEA;
+    public const byte PutStreamEndRequest = 0xEB;
+    public const byte PutStreamNextResponse = 0xEC;
+    public const byte PutStreamNextRequest = 0xED;
+    public const byte PutStreamStartResponse = 0xEE;
+    public const byte PutStreamStartRequest = 0xEF;
+
+    // Multimap operations. A multimap cache holds a collection of values per key rather than one; these
+    // are cache-scoped like normal cache operations (cache name on the header, response opcode = request + 1).
+    public const byte MultimapGetRequest = 0x67;
+    public const byte MultimapGetWithMetadataRequest = 0x69;
+    public const byte MultimapPutRequest = 0x6B;
+    public const byte MultimapRemoveRequest = 0x6D;       // removes every value under a key
+    public const byte MultimapRemoveEntryRequest = 0x6F;  // removes one value under a key
+    public const byte MultimapSizeRequest = 0x71;
+    public const byte MultimapContainsEntryRequest = 0x73;
+    public const byte MultimapContainsKeyRequest = 0x75;
+    public const byte MultimapContainsValueRequest = 0x77;
+
     // Remote query (Ickle). The request body is a single protobuf-encoded QueryRequest and the response
     // body a single protobuf-encoded QueryResponse. Cache-scoped like a normal cache operation, so the
     // cache name travels on the header and the response opcode is request + 1 (0x20).
@@ -74,6 +108,8 @@ internal static class Constants
     public const byte CounterResetRequest = 0x54;            // reset a counter to its initial value
     public const byte CounterGetRequest = 0x56;              // read a counter's current value
     public const byte CounterCasRequest = 0x58;              // compare-and-swap (strong counters)
+    public const byte CounterAddListenerRequest = 0x5A;      // subscribe to a counter's change events
+    public const byte CounterRemoveListenerRequest = 0x5C;   // unsubscribe from a counter's change events
     public const byte CounterRemoveRequest = 0x5E;           // delete a counter cluster-wide
     public const byte CounterGetNamesRequest = 0x64;         // list every defined counter's name
 

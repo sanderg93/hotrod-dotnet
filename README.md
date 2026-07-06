@@ -47,11 +47,13 @@ is the pragmatic alternative; this client is for when you specifically need HotR
 Implemented: the basic `Put`, `Get`, `Remove`, `ContainsKey`, `Clear`, `Size`; the conditional
 `PutIfAbsent` and `Replace`; the versioned `GetWithVersion`, `ReplaceWithVersion`,
 `RemoveWithVersion` (optimistic concurrency); the bulk `PutAll`, `GetAll`, `bulkGetKeys`; iteration;
-and per-entry **expiration** (lifespan / max-idle) on every write (string and `byte[]` overloads).
-Beyond key/value: **Ickle remote query**, client-side **transactions** (prepare/commit/rollback),
-server-side **admin and script execution** (create/remove/list caches, run deployed scripts),
-**clustered counters** (strong and weak), **client listeners** with an invalidated **near cache**,
-and **transparent retry/failover** across cluster nodes. Operations are fully asynchronous over a
+chunked **`GetStream`/`PutStream`** for values too large to buffer whole; and per-entry
+**expiration** (lifespan / max-idle) on every write (string and `byte[]` overloads). Beyond
+key/value: a **multimap cache** (`MultimapCache`, multiple values per key), **Ickle remote query**,
+client-side **transactions** (prepare/commit/rollback), server-side **admin and script execution**
+(create/remove/list caches, run deployed scripts), **clustered counters** (strong and weak,
+including **change-event listeners**), **client listeners** with an invalidated **near cache**, and
+**transparent retry/failover** across cluster nodes. Operations are fully asynchronous over a
 **pool of connections per cluster node** with **Hash-Distribution-Aware client intelligence**
 (single-hop routing to a key's owner), optionally encrypted with **TLS** (including **mutual TLS**
 client certificates) and authenticated with **SASL PLAIN, SCRAM-SHA-256/512, EXTERNAL (mTLS) or
@@ -70,14 +72,18 @@ Deliberately not implemented (yet):
 | Not implemented | Consequence |
 |-----------------|-------------|
 | SASL DIGEST, GSSAPI (Kerberos) | PLAIN, SCRAM-SHA-256/512, EXTERNAL and OAUTHBEARER are covered; Kerberos realms are out |
-| Multimap operations (`RemoteMultimapCache`, opcodes `0x67`–`0x78`) | The multimap cache type (multiple values per key) is not supported at all |
-| `GetStream` / `PutStream` (opcodes `0x37`/`0x39`) | Large values must fit in one request/response body; no chunked transfer |
-| Counter event listeners (`CounterAddListener`/`CounterRemoveListener`, `0x5A`/`0x5C`) | Counters can be read/written but not subscribed to for change notifications |
 | Bloom-filter client listeners (`0x43`) | Regular client listeners work; the bloom-filter optimization for large key sets is unused |
 | Transaction recovery (`FetchInDoubtTx`, `0x7B`) | In-doubt XA transactions left by a crashed client cannot be recovered/queried |
 | Legacy plain `BulkGet` (`0x19`, superseded by iteration + `GetAll`) | No functional loss; `IterateAsync`/`GetAllAsync` cover the same ground |
 | Pipelining | Each connection handles one request at a time; concurrency comes from the pool |
 | Generic `Put<T>`/`Get<T>` on `HotRodClient` | The typed ProtoStream API exists on `RemoteCache.Serialization`, not yet mirrored on the client facade |
+
+`GetStream`/`PutStream` deserve a note: the wire opcodes `0x37`/`0x39` from protocol 2.6 are still
+what most documentation (including the official protocol reference's own table) shows, but protocol
+**4.1 dropped them** in favor of a `GetStreamStart/Next/End` + `PutStreamStart/Next/End` family on
+opcodes `0xE4`–`0xEF` (confirmed against `HotRodConstants.java` on both the client and server, and
+verified empirically: the old opcodes hang or return wrong results against a current server). This
+client implements the current (Start/Next/End) family, not the deprecated one.
 
 The client learns every cluster node, keeps a pool per node, and routes each key straight to its
 primary owner using the same consistent hash the server does — so reads and writes are single-hop.
@@ -737,12 +743,16 @@ Wire correctness must ultimately be confirmed against a running server. Useful t
 24. ~~Client-side transactions (prepare/commit/rollback)~~ — done.
 25. ~~SASL EXTERNAL (mutual TLS) and OAUTHBEARER~~ — done.
 26. ~~Logging (`Microsoft.Extensions.Logging`) and DI integration (`AddHotRodClient`)~~ — done.
+27. ~~Multimap cache (`MultimapCache`, multiple values per key)~~ — done.
+28. ~~Chunked `GetStream`/`PutStream` for large values~~ — done, against the current (protocol 4.1)
+    `Start`/`Next`/`End` opcode family, not the deprecated 2.6 one — see the [Scope](#scope) note.
+29. ~~Counter change-event listeners (`StrongCounter`/`WeakCounter.AddListenerAsync`)~~ — done.
 
 The wire protocol is HotRod 4.1, confirmed against Infinispan's own source (`HotRodVersion.java`,
 `LATEST = HOTROD_41`) to still be the latest as of Infinispan 16.2.1 — there is no 4.2 to track yet.
-Remaining known gaps against the full 4.1 opcode set: SASL DIGEST/GSSAPI, the multimap cache type,
-`GetStream`/`PutStream`, counter event listeners, bloom-filter client listeners, and XA transaction
-recovery (`FetchInDoubtTx`) — see the [Scope](#scope) table above for what each gap actually costs.
+Remaining known gaps against the full 4.1 opcode set: SASL DIGEST/GSSAPI, bloom-filter client
+listeners, and XA transaction recovery (`FetchInDoubtTx`) — see the [Scope](#scope) table above for
+what each gap actually costs.
 
 ## How this was built
 

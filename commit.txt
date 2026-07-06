@@ -1,0 +1,24 @@
+Add query, transactions, admin, and auth/logging/DI extensions
+
+- Ickle remote query (RemoteCache/HotRodClient.Query) and client-side
+  transactions (BeginTransaction, two-phase prepare/commit/rollback)
+- Generic Put<T>/Get<T> with ProtoStream marshalling for custom types,
+  alongside the existing string/byte[] overloads
+- Server-side cache administration and script execution (AdminManager,
+  ScriptExecutor)
+- Microsoft.Extensions.Logging integration and a DependencyInjection
+  package (AddHotRodClient)
+- SASL EXTERNAL (mutual TLS) and OAUTHBEARER mechanisms, plus client
+  certificate support on TlsOptions
+- Resolved all CS1591 warnings by documenting the public API surface
+- Confirmed HotRod 4.2 does not exist yet (checked against Infinispan's
+  own source); audited the full 4.1 opcode set against Constants.cs
+- Multimap cache support (MultimapCache, HotRodClient.GetMultimapCache)
+- Chunked GetStream/PutStream for large values, against the current
+  protocol 4.1 Start/Next/End opcodes (the older 2.6 opcodes were
+  confirmed non-functional against a current server and are not used)
+- Clustered counter change-event listeners (StrongCounter/WeakCounter
+  .AddListenerAsync, CounterListener)
+- README scope/roadmap updated to match actual coverage
+
+321 unit tests (net8.0/net10.0) and 3 integration tests passing.

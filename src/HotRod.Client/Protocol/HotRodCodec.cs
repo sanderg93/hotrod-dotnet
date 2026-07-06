@@ -73,6 +73,14 @@ internal static class HotRodCodec
         writer.Advance(8);
     }
 
+    /// <summary>Writes a signed 32-bit value as 4 big-endian bytes (used for GetStream/PutStream stream ids).</summary>
+    public static void WriteInt(IBufferWriter<byte> writer, int value)
+    {
+        Span<byte> span = writer.GetSpan(4);
+        BinaryPrimitives.WriteInt32BigEndian(span, value);
+        writer.Advance(4);
+    }
+
     // -- Read side (asynchronous, from the pipe) ---------------------------
 
     public static async ValueTask<byte> ReadByteAsync(PipeReader reader, CancellationToken ct)
@@ -278,6 +286,24 @@ internal static class HotRodCodec
         bool hasVersion = opcode is Constants.CacheEntryCreatedEvent or Constants.CacheEntryModifiedEvent;
         long version = hasVersion ? await ReadLongAsync(reader, ct) : 0;
         return new RawClientEvent(opcode, listenerId, retried, key, version, hasVersion);
+    }
+
+    /// <summary>Reads a signed 32-bit value from 4 big-endian bytes (used for GetStream/PutStream stream ids).</summary>
+    public static async ValueTask<int> ReadIntAsync(PipeReader reader, CancellationToken ct)
+    {
+        while (true)
+        {
+            ReadResult result = await reader.ReadAsync(ct);
+            ReadOnlySequence<byte> buffer = result.Buffer;
+            var seq = new SequenceReader<byte>(buffer);
+            if (seq.TryReadBigEndian(out int value))
+            {
+                reader.AdvanceTo(seq.Position);
+                return value;
+            }
+            EnsureNotCompleted(result, "int");
+            reader.AdvanceTo(buffer.Start, buffer.End);
+        }
     }
 
     /// <summary>Reads a signed 64-bit value from 8 big-endian bytes (used for entry versions).</summary>

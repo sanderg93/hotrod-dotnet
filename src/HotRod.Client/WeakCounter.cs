@@ -45,4 +45,11 @@ public sealed class WeakCounter
     /// <summary>Removes this counter cluster-wide.</summary>
     public ValueTask RemoveAsync(CancellationToken ct = default) =>
         CounterOps.RemoveAsync(_client, Name, ct);
+
+    /// <summary>
+    /// Registers a listener that is invoked for every change to this counter's value. The listener
+    /// holds one dedicated connection for its lifetime; dispose the returned handle to unsubscribe.
+    /// </summary>
+    public Task<CounterListener> AddListenerAsync(Func<CounterChangeEvent, ValueTask> onEvent, CancellationToken ct = default) =>
+        CounterOps.AddListenerAsync(_client, Name, onEvent, ct);
 }

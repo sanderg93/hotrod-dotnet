@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.CompilerServices;
 using HotRod.Client.Marshalling;
 using HotRod.Client.Protocol;
@@ -378,6 +379,137 @@ public sealed class RemoteCache : IAsyncDisposable
                 (_, _, _) => ValueTask.FromResult(true), ct);
         }
     }
+
+    // -- Streaming values (GetStreamStart/Next/End, PutStreamStart/Next/End) ------------------------
+
+    /// <summary>
+    /// Reads a value as a <see cref="Stream"/> that fetches it from the server one <paramref
+    /// name="batchSize"/>-sized chunk at a time (GetStreamStart, then GetStreamNext as needed) instead of
+    /// buffering the whole value before returning — useful for a value too large to hold comfortably in
+    /// memory at once. Returns null if the key is absent. Like <see cref="IterateAsync"/>'s cursor, the
+    /// connection is reserved for the returned stream's whole lifetime; dispose it (whether or not it was
+    /// read to the end) to send GetStreamEnd and release the connection back to its pool.
+    /// </summary>
+    public async ValueTask<HotRodValueStream?> GetStreamAsync(byte[] key, int batchSize = 8192, CancellationToken ct = default)
+    {
+        Cluster.ConnectionLease lease = await _client.LeaseAsync(ct);
+        HotRodConnection connection = lease.Connection;
+        bool transferred = false;
+        try
+        {
+            GetStreamStart? start = await connection.ExecuteAsync(_name, Constants.GetStreamStartRequest, flags: 0, _marshaller.DataFormat,
+                w => StreamCodec.WriteGetStreamStart(w, key, batchSize),
+                (status, reader, c) => StreamCodec.ReadGetStreamStartAsync(status, reader, c), ct);
+
+            if (start is not { } s)
+                return null; // key absent; the server started nothing, so there is nothing to end
+
+            var stream = new HotRodValueStream(connection, lease, _name, _marshaller.DataFormat, s.Id, s.Chunk, s.Complete, s.Version);
+            transferred = true;
+            return stream;
+        }
+        finally
+        {
+            if (!transferred)
+                await lease.DisposeAsync();
+        }
+    }
+
+    /// <summary>String-keyed overload of <see cref="GetStreamAsync(byte[], int, CancellationToken)"/>.</summary>
+    public ValueTask<HotRodValueStream?> GetStreamAsync(string key, int batchSize = 8192, CancellationToken ct = default) =>
+        GetStreamAsync(_marshaller.Marshal(key), batchSize, ct);
+
+    /// <summary>
+    /// Writes a value read chunk by chunk from <paramref name="source"/> — until it is exhausted —
+    /// instead of buffering it whole before sending, so a large upload does not need to fit in memory at
+    /// once (PutStreamStart, then one PutStreamNext per <paramref name="chunkSize"/>-sized chunk, the
+    /// last one carrying <c>complete = true</c>, which is what actually triggers the write server-side).
+    /// <paramref name="version"/> selects the write mode: 0 (default) is an unconditional put, -1 is
+    /// put-if-absent, any other value is a conditional replace using a version obtained from
+    /// <see cref="GetWithVersionAsync(byte[], CancellationToken)"/>. Returns true if the entry was stored
+    /// (false for a failed conditional write). Does not retry on a transient failure, since <paramref
+    /// name="source"/> may not be rewindable — matching the Java client, which does not retry this
+    /// operation either. If <paramref name="source"/> or the connection fails before the final chunk is
+    /// sent, PutStreamEnd is sent best-effort to abandon the half-written value server-side.
+    /// <para>
+    /// The last chunk actually containing bytes is the one sent with <c>complete = true</c> (that flag,
+    /// not a following empty chunk, is what triggers the write) — verified against a live server, which
+    /// rejects a bare zero-length chunk outright ("Retained chunk requires a chunk length greater than
+    /// 0"). This is why the loop below reads one chunk ahead: it only knows a chunk is the last one once
+    /// the next read comes back empty.
+    /// </para>
+    /// </summary>
+    public async ValueTask<bool> PutStreamAsync(
+        byte[] key, Stream source, long version = StreamCodec.UnconditionalPut, Expiration expiration = default,
+        int chunkSize = 8192, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        await using Cluster.ConnectionLease lease = await _client.LeaseAsync(ct);
+        HotRodConnection connection = lease.Connection;
+
+        int id = await connection.ExecuteAsync(_name, Constants.PutStreamStartRequest, flags: 0, _marshaller.DataFormat,
+            w => StreamCodec.WritePutStreamStart(w, key, expiration, version),
+            (_, reader, c) => StreamCodec.ReadPutStreamStartAsync(reader, c), ct);
+
+        bool stored;
+        byte[] current = System.Buffers.ArrayPool<byte>.Shared.Rent(chunkSize);
+        byte[] pending = System.Buffers.ArrayPool<byte>.Shared.Rent(chunkSize);
+        try
+        {
+            ValueTask<bool> SendChunk(byte[] data, int length, bool complete) =>
+                connection.ExecuteAsync(_name, Constants.PutStreamNextRequest, flags: 0, _marshaller.DataFormat,
+                    w => StreamCodec.WritePutStreamChunk(w, id, complete, data.AsSpan(0, length)),
+                    (status, _, _) => ValueTask.FromResult(ResponseStatus.IsSuccess(status)), ct);
+
+            int currentLength = await source.ReadAsync(current.AsMemory(0, chunkSize), ct);
+            if (currentLength == 0)
+            {
+                // An empty value: there was never a chunk to send. The server's "chunk length > 0"
+                // requirement means this is sent as-is and left to fail if the server truly cannot
+                // represent an empty value this way; this client does not invent a workaround for that.
+                stored = await SendChunk(current, 0, complete: true);
+            }
+            else
+            {
+                while (true)
+                {
+                    int nextLength = await source.ReadAsync(pending.AsMemory(0, chunkSize), ct);
+                    bool isLast = nextLength == 0;
+                    stored = await SendChunk(current, currentLength, isLast);
+                    if (isLast)
+                        break;
+
+                    (current, pending) = (pending, current);
+                    currentLength = nextLength;
+                }
+            }
+        }
+        catch
+        {
+            try
+            {
+                await connection.ExecuteAsync(_name, Constants.PutStreamEndRequest, flags: 0, _marshaller.DataFormat,
+                    w => StreamCodec.WriteStreamId(w, id),
+                    (_, _, _) => ValueTask.FromResult(true), CancellationToken.None);
+            }
+            catch { /* best-effort cleanup; the original failure is what the caller needs to see */ }
+            throw;
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<byte>.Shared.Return(current);
+            System.Buffers.ArrayPool<byte>.Shared.Return(pending);
+        }
+
+        _nearCache?.Remove(key);
+        return stored;
+    }
+
+    /// <summary>String-keyed overload of <see cref="PutStreamAsync(byte[], Stream, long, Expiration, int, CancellationToken)"/>.</summary>
+    public ValueTask<bool> PutStreamAsync(
+        string key, Stream source, long version = StreamCodec.UnconditionalPut, Expiration expiration = default,
+        int chunkSize = 8192, CancellationToken ct = default) =>
+        PutStreamAsync(_marshaller.Marshal(key), source, version, expiration, chunkSize, ct);
 
     // -- Client listeners (server-pushed entry events) ----------------------
 

@@ -201,6 +201,57 @@ internal static class CounterOps
             w => CounterCodec.WriteCounterName(w, name),
             (_, _, _) => ValueTask.FromResult(true), ct);
 
+    /// <summary>
+    /// Registers a listener for a counter's change events. The listener holds one dedicated connection
+    /// for its lifetime; dispose the returned handle to unsubscribe. <paramref name="onEvent"/> is
+    /// awaited before the next event is read, so a slow handler applies back-pressure rather than
+    /// racing; an exception it throws is swallowed and the stream continues.
+    /// </summary>
+    public static async Task<CounterListener> AddListenerAsync(
+        HotRodClient client, string counterName, Func<CounterChangeEvent, ValueTask> onEvent, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(onEvent);
+
+        byte[] listenerId = CounterListener.NewId();
+        Cluster.ConnectionLease lease = await client.LeaseAsync(ct);
+        var listenerCts = new CancellationTokenSource();
+        var ackReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Task loop = lease.Connection.ListenCounterAsync(
+            counterName, listenerId,
+            ev => onEvent(Map(ev)),
+            ackReady, listenerCts.Token);
+
+        try
+        {
+            await ackReady.Task.WaitAsync(ct); // the server's add ack (faulted on a server-side error)
+        }
+        catch
+        {
+            await listenerCts.CancelAsync();
+            try { await loop; } catch { /* observe */ }
+            await lease.DisposeAsync();
+            listenerCts.Dispose();
+            throw;
+        }
+
+        return new CounterListener(client, counterName, listenerId, lease, loop, listenerCts);
+    }
+
+    /// <summary>Removes a counter listener registration for <paramref name="listenerId"/>.</summary>
+    internal static ValueTask<bool> RemoveListenerAsync(HotRodClient client, string counterName, byte[] listenerId, CancellationToken ct) =>
+        ExecuteAsync(client, Constants.CounterRemoveListenerRequest,
+            w =>
+            {
+                CounterCodec.WriteCounterName(w, counterName);
+                HotRodCodec.WriteArray(w, listenerId);
+            },
+            (status, _, _) => ValueTask.FromResult(ResponseStatus.IsSuccess(status)), ct);
+
+    /// <summary>Projects a decoded wire event onto the public event type.</summary>
+    private static CounterChangeEvent Map(in Protocol.RawCounterEvent ev) =>
+        new(ev.CounterName, ev.OldValue, ev.OldState, ev.NewValue, ev.NewState);
+
     public static ValueTask<IReadOnlyCollection<string>> GetCounterNamesAsync(HotRodClient client, CancellationToken ct) =>
         ExecuteAsync(client, Constants.CounterGetNamesRequest,
             _ => { }, // the get-names request carries no counter name; the body is empty

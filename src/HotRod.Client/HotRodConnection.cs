@@ -338,6 +338,81 @@ internal sealed class HotRodConnection : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Registers a counter listener on this (now dedicated) connection and turns it into an event
+    /// stream. Writes the counterAddListener request (counter name, then listener id), then loops
+    /// reading messages: the first ack completes <paramref name="ackReady"/> (or faults it on a server
+    /// error), and every counter event after that is dispatched to <paramref name="onEvent"/>. The loop
+    /// runs until <paramref name="ct"/> is cancelled (the listener is removed), at which point the
+    /// connection is left mid-stream and marked faulted so the pool discards it on return.
+    /// </summary>
+    /// <remarks>
+    /// Counter operations carry an empty cache name on the header (see <see cref="CounterManager"/>), so
+    /// this shares the ack/error/topology plumbing with <see cref="ListenAsync"/> by passing an empty
+    /// cache name through. Additive alongside <see cref="ListenAsync"/> rather than folded into it, since
+    /// a counter event's body (counter name plus old/new value and state) does not fit the cache entry
+    /// event shape read by <see cref="HotRodCodec.ReadClientEventAsync"/>.
+    /// </remarks>
+    public async Task ListenCounterAsync(
+        string counterName,
+        byte[] listenerId,
+        Func<Protocol.RawCounterEvent, ValueTask> onEvent,
+        TaskCompletionSource ackReady,
+        CancellationToken ct)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            WriteHeader(string.Empty, Constants.CounterAddListenerRequest, flags: 0, DataFormat.None);
+            CounterCodec.WriteCounterName(_writer, counterName);
+            HotRodCodec.WriteArray(_writer, listenerId);
+            await _writer.FlushAsync(ct);
+
+            while (true)
+            {
+                byte magic = await HotRodCodec.ReadByteAsync(_reader, ct);
+                if (magic != Constants.ResponseMagic)
+                    throw new HotRodException($"Unexpected response magic 0x{magic:X2} on a counter listener connection.");
+
+                await HotRodCodec.ReadVLongAsync(_reader, ct); // message id (echoed / event correlation)
+                byte opcode = await HotRodCodec.ReadByteAsync(_reader, ct);
+
+                if (opcode == Constants.CounterEvent)
+                {
+                    Protocol.RawCounterEvent ev = await CounterCodec.ReadCounterEventAsync(_reader, ct);
+                    try { await onEvent(ev); }
+                    catch { /* a throwing handler must not desync the stream; the next event is still read */ }
+                }
+                else if (opcode == Constants.CounterAddListenerRequest + 1) // COUNTER_ADD_LISTENER_RESPONSE
+                {
+                    await ConsumeListenerAckAsync(string.Empty, ackReady, ct);
+                }
+                else if (opcode == Constants.ErrorResponse)
+                {
+                    await FaultFromErrorAsync(string.Empty, ackReady, ct);
+                }
+                else
+                {
+                    throw new HotRodException($"Unexpected opcode 0x{opcode:X2} on a counter listener connection.");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The listener was removed: the read was abandoned mid-stream, so the connection is spent.
+        }
+        catch (Exception ex)
+        {
+            ackReady.TrySetException(ex); // pre-ack failures surface to AddListenerAsync; post-ack it is a no-op
+            throw;
+        }
+        finally
+        {
+            _faulted = true;
+            _lock.Release();
+        }
+    }
+
     /// <summary>Reads the addClientListener ack header and completes the registration, or faults it on a server error.</summary>
     private async ValueTask ConsumeListenerAckAsync(string cacheName, TaskCompletionSource ackReady, CancellationToken ct)
     {

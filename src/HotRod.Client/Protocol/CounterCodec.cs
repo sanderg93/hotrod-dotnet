@@ -88,4 +88,34 @@ internal static class CounterCodec
         0x00 => CounterType.UnboundedStrong,
         _ => throw new HotRodException($"Unsupported counter type in configuration flags 0x{flags:X2}."),
     };
+
+    /// <summary>
+    /// Reads a counter event body, given the event opcode (0x66) already taken from the header: a
+    /// status byte and a topology byte (both ignored — like cache events, a counter event never carries
+    /// a topology update), the counter's name, the listener id, one state byte packing the old state in
+    /// its low two bits and the new state in the next two, then the old and new values as 8-byte longs.
+    /// This matches Infinispan's <c>Codec30.readCounterEvent</c>.
+    /// </summary>
+    public static async ValueTask<RawCounterEvent> ReadCounterEventAsync(PipeReader reader, CancellationToken ct)
+    {
+        await HotRodCodec.ReadByteAsync(reader, ct); // status: always success on an event
+        await HotRodCodec.ReadByteAsync(reader, ct); // topology marker: events carry no topology update
+
+        string counterName = await HotRodCodec.ReadStringAsync(reader, ct);
+        byte[] listenerId = await HotRodCodec.ReadArrayAsync(reader, ct);
+        byte encodedState = await HotRodCodec.ReadByteAsync(reader, ct);
+        long oldValue = await HotRodCodec.ReadLongAsync(reader, ct);
+        long newValue = await HotRodCodec.ReadLongAsync(reader, ct);
+
+        return new RawCounterEvent(
+            counterName, listenerId, oldValue, DecodeState(encodedState & 0x03), newValue, DecodeState((encodedState >> 2) & 0x03));
+    }
+
+    private static CounterEventState DecodeState(int bits) => bits switch
+    {
+        0x00 => CounterEventState.Valid,
+        0x01 => CounterEventState.LowerBoundReached,
+        0x02 => CounterEventState.UpperBoundReached,
+        _ => throw new HotRodException($"Unsupported counter event state bits 0x{bits:X2}."),
+    };
 }
